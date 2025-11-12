@@ -1,0 +1,6 @@
+typer>=0.9.0
+pyyaml>=6.0
+omegaconf>=2.3.0
+jsonlines>=4.0.0
+matplotlib>=3.7.0
+rich>=13.0.0

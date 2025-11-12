@@ -1,0 +1,12 @@
+README.md
+pyproject.toml
+sciagent/__init__.py
+sciagent/cli.py
+sciagent/config_parser.py
+sciagent/run_manager.py
+sciagent.egg-info/PKG-INFO
+sciagent.egg-info/SOURCES.txt
+sciagent.egg-info/dependency_links.txt
+sciagent.egg-info/entry_points.txt
+sciagent.egg-info/requires.txt
+sciagent.egg-info/top_level.txt

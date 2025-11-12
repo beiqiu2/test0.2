@@ -1,0 +1,2 @@
+[console_scripts]
+sciagent = sciagent.cli:app

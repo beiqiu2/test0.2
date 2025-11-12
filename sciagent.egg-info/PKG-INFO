@@ -1,3 +1,16 @@
+Metadata-Version: 2.4
+Name: sciagent
+Version: 0.1.0
+Summary: RunGuardian / Sci Pilot CLI toolkit for guarding training runs
+Requires-Python: >=3.10
+Description-Content-Type: text/markdown
+Requires-Dist: typer>=0.9.0
+Requires-Dist: pyyaml>=6.0
+Requires-Dist: omegaconf>=2.3.0
+Requires-Dist: jsonlines>=4.0.0
+Requires-Dist: matplotlib>=3.7.0
+Requires-Dist: rich>=13.0.0
+
 # RunGuardian / SciPilot 总览
 
 RunGuardian / SciPilot（以下简称 *SciAgent*）是一套零侵入、可复用、易演示的训练“黑盒包装器”。它以“一条命令包裹任意 `python train.py`”为核心理念，帮助科研人员和竞赛团队解决以下痛点：
@@ -16,7 +29,7 @@ SciAgent 通过“记录、守护、复盘、建议”四步闭环帮助你稳�
 | 里程碑 | 能力描述 | 当前状态 | 关键输出 |
 | --- | --- | --- | --- |
 | **M0 能跑** | CLI 包裹训练并生成标准化 Run 目录 | ✅ 已实现 | `cmd.txt` `config.json` `env.json` `stdout.log` `logs_tail.txt` `metrics.jsonl` |
-| **M1 能比** | 配置指纹（SHA256）与 Diff 引擎 | ✅ 已实现 | `fingerprint.txt` `config.json`（规范化） `sciagent diff` |
+| **M1 能比** | 配置指纹（SHA256）与 Diff 引擎 | ⏳ 规划中 | `fingerprint.txt` `sciagent diff` |
 | **M2 能救** | OOM / `Ctrl+C` 自救，写入 `last.ckpt` `resume.json` | ⏳ 规划中 | 中断留存与恢复提示 |
 | **M3 能记** | 自动快照、主指标 `best.ckpt`、限额控制 | ⏳ 规划中 | `checkpoints/` 与 `run_meta.json` |
 | **M4 能报** | 自动产出 `report.md` + `curves.png` | ⏳ 规划中 | 一页读懂表现、异常和建议 |
@@ -69,19 +82,19 @@ pip install torch torchvision --index-url https://download.pytorch.org/whl/cu126
 
 ```powershell
 # JSONL 指标流（推荐）
-sciagent run --cmd "python examples/train_dummy.py --lr 3e-4 --bs 32" --workdir ./exp --name run_dummy
+sciagent --cmd "python examples/train_dummy.py --lr 3e-4 --bs 32" --workdir ./exp --name run_dummy
 
 # stdout 文本日志
-sciagent run --cmd "python examples/train_stdout_style.py --lr 5e-4 --bs 16" --workdir ./exp --name run_stdout
+sciagent --cmd "python examples/train_stdout_style.py --lr 5e-4 --bs 16" --workdir ./exp --name run_stdout
 
 # 故障演示（第 80 步模拟 OOM）
-sciagent run --cmd "python examples/train_crash.py" --workdir ./exp --name run_crash
+sciagent --cmd "python examples/train_crash.py" --workdir ./exp --name run_crash
 ```
 
 ### 2. 包裹真实脚本 `main_train.py`
 
 ```powershell
-sciagent run --cmd "python main_train.py" --workdir ./exp --name main_train --encoding gbk
+sciagent --cmd "python main_train.py" --workdir ./exp --name main_train --encoding gbk
 ```
 
 说明：
@@ -98,58 +111,21 @@ exp/
 └── runs/
     └── 2025-11-12_10-37-27_main_train/
         ├── cmd.txt              # 原始命令
-        ├── config.json          # 规范化后的最终配置树（参与指纹）
+        ├── config.json          # CLI + 配置文件合成后的配置树
         ├── env.json             # Python/GPU/Git 信息
         ├── logs_tail.txt        # stdout 最近 N（默认 200）行
         ├── stdout.log           # 全量 stdout
-        ├── metrics.jsonl        # 自动识别的 JSONL 指标（若存在）
-        └── fingerprint.txt      # 配置树 SHA256 指纹
+        └── metrics.jsonl        # 自动识别的 JSONL 指标（若存在）
 ```
 
 后续里程碑会在该目录下增加 `checkpoints/`、`fingerprint.txt`、`report.md` 等文件。
 
 ---
 
-## `train/*.py` 脚本规范
-
-为保证与 SciAgent 的零侵入集成，建议自定义训练脚本遵循以下约定：
-
-1. **参数解析**  
-   使用 `argparse` 或兼容工具（如 `typer`、`click`）暴露关键超参，便于被 CLI 命令捕获。例如提供 `--epochs`、`--lr`、`--batch-size` 等显式参数。
-
-2. **日志输出**  
-   - 优先以 JSON 行（如 `print(json.dumps({...}), flush=True)`）记录指标，SciAgent 会自动写入 `metrics.jsonl`。  
-   - 若使用文本日志，键值对格式需稳定（例如 `key=value`），便于后续扩展的正则解析。
-
-3. **显式随机种子与设备设置**  
-   在脚本开头设置 `torch.manual_seed`、`numpy`/`random` 种子，并允许通过参数切换 CPU/CUDA，确保环境可重现。
-
-4. **资源保存与清理**  
-   - 建议在训练过程中提供保存模型权重的接口（如定期调用 `torch.save`），以便未来 M2/M3 自救/快照功能接入。  
-   - 避免在脚本内部调用 `os.chdir` 或强制清理外部路径，保持与 SciAgent 的工作目录一致。
-
-5. **长时间运行容错**  
-   - 捕获 `KeyboardInterrupt` / OOM 等异常时，尽量在脚本侧完成最后一次保存或状态输出。  
-   - 若使用 TensorBoard，可将日志写入 `logs/`、`logs_deep/` 等独立目录，避免与 SciAgent 产物混淆。
-
-遵循以上规范，脚本既能独立运行，也能被 `sciagent run --cmd "python train/xxx.py ..."` 直接包装，达到 0 侵入可复现的目标。
-
----
-
 ## CLI 使用说明
 
 ```
-Usage: sciagent [OPTIONS] COMMAND [ARGS]...
-
-Commands:
-  run   包裹执行训练命令，产出标准化运行目录
-  diff  对比两次运行的配置差异
-```
-
-### run 子命令
-
-```
-sciagent run [OPTIONS]
+Usage: sciagent [OPTIONS]
 
 选项：
   --cmd TEXT          要执行的训练命令（必填，建议整体用引号包裹）
@@ -162,18 +138,6 @@ sciagent run [OPTIONS]
 ```
 
 当命令使用 `shell=True` 启动时，保持原样拷贝即可；若包含复杂参数，建议整体用双引号包裹并在内部使用单引号或转义。
-
-### diff 子命令
-
-```
-sciagent diff <run_dir_a> <run_dir_b>
-```
-
-展示两次运行的配置变动，并打印指纹值。例如：
-
-```
-sciagent diff exp\runs\2025-11-12_12-09-01_m1_demo exp\runs\2025-11-12_12-09-35_m1_demo_lr
-```
 
 ---
 
@@ -211,10 +175,10 @@ sciagent diff exp\runs\2025-11-12_12-09-01_m1_demo exp\runs\2025-11-12_12-09-35_
 
 ## 未来功能设计要点
 
-### M1：配置指纹与 Diff（已实现）
+### M1：配置指纹与 Diff
 
-- 指纹生成：深度规范化配置（key 排序、浮点统一精度、路径去噪）后计算 SHA256，落盘于 `fingerprint.txt`。
-- Diff 引擎：支持 `sciagent diff <runA> <runB>`，以 dot-path 形式展示参数变化并输出指纹对比。
+- 指纹生成：深度归一化配置（key 排序、浮点统一精度、路径去噪）后计算 SHA256。
+- Diff 引擎：支持 `sciagent diff --a <runA> --b <runB>`，以 dot-path 形式展示参数变化。
 
 ### M2：训练自救
 
